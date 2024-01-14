@@ -12,10 +12,8 @@ function Text() {
   const callsCount = useRef(0);
   const isStreamingOn = useSelector((state) => state.updateIsStreaming);
   const bothVideoAndText = useRef(isStreamingOn.yes);
-
   const interests = useRef(useSelector((state) => state.updateInterest));
   const PeerConnection = useRef(new Peer());
-  // const remotePeerConnection = useRef(new Peer());
   console.log(isStreamingOn, bothVideoAndText.current);
   const [myStream, setMyStream] = useState();
   const streamRef = useRef();
@@ -41,16 +39,6 @@ function Text() {
       }
       console.log("Peer: ", PeerConnection.current.peer);
     }
-  };
-  const removeTracks = () => {
-    const senders = PeerConnection.current.peer.getSenders();
-    senders.forEach((sender) => {
-      PeerConnection.current.peer.removeTrack(sender);
-    });
-    streamRef.current
-      .getTracks()
-      .forEach((track) => streamRef.current.removeTrack(track));
-    makeStream();
   };
   async function makeStream() {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -112,10 +100,8 @@ function Text() {
       "iceconnectionstatechange",
       () => {
         if (PeerConnection.current.peer.iceConnectionState === "disconnected") {
-          removeTracks();
           PeerConnection.current.disconnect();
           PeerConnection.current.peer.restartIce();
-
           console.log("after recreation: ", PeerConnection.current);
         }
       }
@@ -155,10 +141,7 @@ function Text() {
     socketInstance.on("activate:remote:stream", () => {
       console.log("webrtc connected with: user2");
     });
-    socketInstance.on("send:track:to:user2", () => {
-      setTracks();
-      console.log("send the stream");
-    });
+    socketInstance.on("send:track:to:user2", () => setTracks());
     socketInstance.on("get:negotiation:ans", async (ans) => {
       console.log("heres the asf: ", ans);
       await PeerConnection.current.setRemoteDescription(ans);
@@ -181,7 +164,6 @@ function Text() {
       console.log("webrtc connected with: user2");
       // makeStreamForUser2();
       setTracks();
-      console.log("send the stream");
     });
     socketInstance.on("user:joined", async (user2) => {
       userSockerId.current = user2;
@@ -224,7 +206,6 @@ function Text() {
   };
   function setDefault(fromUser2) {
     if (bothVideoAndText.current && !fromUser2) {
-      removeTracks();
       PeerConnection.current.disconnect();
       PeerConnection.current.peer.restartIce();
       console.log("peer connection state => ", PeerConnection.current);
