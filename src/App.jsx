@@ -51,15 +51,22 @@ function App() {
   }
   return (
     <div>
-      <div
+      <h1>This is OMEGLE CLONE WITH VIDEO AND TEXT CHAT SUPPORT. working accress all over the world. thank you!</h1>
+      <button
         id="text"
         onClick={() => {
           setShowDiolog(true);
         }}
+style={
+          {
+            marginLeft: "30px",
+            marginRight: "10px"
+          }
+        }
       >
         Text
-      </div>
-      <div
+      </button>
+      <button
         id="video"
         onClick={() => {
           setTextOrVideo("video");
@@ -67,8 +74,10 @@ function App() {
         }}
       >
         Video
-      </div>
-
+      </button>
+      <hr />
+      <label htmlFor="interest">Type your interest: (OPTIONAL)</label>
+      <input type="text" name="" id="" placeholder="girls" value={typedInterest} onChange={e => setTypedInterest(e.target.value)}/>
       {showDilog && (
         <div id="agreement">
           YOU MUST BE 18 OR OLDER TO USE OMEGLE. See Omegle’s Terms of Service
