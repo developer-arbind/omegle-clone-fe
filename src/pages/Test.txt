@@ -12,8 +12,11 @@ function Text() {
   const callsCount = useRef(0);
   const isStreamingOn = useSelector((state) => state.updateIsStreaming);
   const bothVideoAndText = useRef(isStreamingOn.yes);
+
   const interests = useRef(useSelector((state) => state.updateInterest));
-  const PeerConnection = useRef(new Peer());
+  const PeerConnection = useRef([new Peer()]);
+  const peerNumber = useRef(0);
+  // const remotePeerConnection = useRef(new Peer());
   console.log(isStreamingOn, bothVideoAndText.current);
   const [myStream, setMyStream] = useState();
   const streamRef = useRef();
@@ -26,7 +29,8 @@ function Text() {
   ]);
   const setTracks = () => {
     console.log("by: ", streamRef.current);
-    const senders = PeerConnection.current.peer.getSenders();
+    const senders =
+      PeerConnection.current[peerNumber.current].peer.getSenders();
     for (let track of streamRef.current.getTracks()) {
       let sender;
       try {
@@ -35,10 +39,23 @@ function Text() {
       if (sender) {
         sender.replaceTrack(track);
       } else {
-        PeerConnection.current.peer.addTrack(track, streamRef.current);
+        PeerConnection.current[peerNumber.current].peer.addTrack(
+          track,
+          streamRef.current
+        );
       }
-      console.log("Peer: ", PeerConnection.current.peer);
+      console.log("Peer: ", PeerConnection.current[peerNumber.current].peer);
     }
+  };
+  const removeTracks = () => {
+    const senders =
+      PeerConnection.current[peerNumber.current].peer.getSenders();
+    senders.forEach((sender) => {
+      PeerConnection.current[peerNumber.current].peer.removeTrack(sender);
+    });
+    streamRef.current.getTracks().forEach((track) => track.stop());
+    setMyStream(null);
+    makeStream();
   };
   async function makeStream() {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -51,7 +68,7 @@ function Text() {
     // setTracks();
   }
   const getOffer = async () => {
-    const offer = await PeerConnection.current.getOffer();
+    const offer = await PeerConnection.current[peerNumber.current].getOffer();
     console.log(offer);
     socketInstance.emit("send:offer", { user2: userSockerId.current, offer });
   };
@@ -69,10 +86,7 @@ function Text() {
   const startNewServer = async () => {
     isWaiting.current = true;
     socketInstance.emit("wait:on:queue");
-    if (!PeerConnection.current.peer) {
-      PeerConnection.current = new Peer();
-    }
-    console.log("PeerConnection: ", PeerConnection.current);
+    console.log("PeerConnection: ", PeerConnection.current[peerNumber.current]);
     setTexts([]);
   };
   const getRemoteTracks = useCallback((event) => {
@@ -83,7 +97,7 @@ function Text() {
 
   const makeNegotiation = useCallback(async () => {
     console.log("./");
-    const offer = await PeerConnection.current.getOffer();
+    const offer = await PeerConnection.current[peerNumber.current].getOffer();
     console.log("negotiation needed offer: ", offer);
     socketInstance.emit("send:negotiation", {
       user2: userSockerId.current,
@@ -91,29 +105,29 @@ function Text() {
     });
   }, []);
   useEffect(() => {
-    PeerConnection.current.peer.addEventListener("track", getRemoteTracks);
-    PeerConnection.current.peer.addEventListener(
+    PeerConnection.current[peerNumber.current].peer.addEventListener(
+      "track",
+      getRemoteTracks
+    );
+    PeerConnection.current[peerNumber.current].peer.addEventListener(
       "negotiationneeded",
       makeNegotiation
     );
-    PeerConnection.current.peer.addEventListener(
-      "iceconnectionstatechange",
-      () => {
-        if (PeerConnection.current.peer.iceConnectionState === "disconnected") {
-          PeerConnection.current.disconnect();
-          PeerConnection.current.peer.restartIce();
-          console.log("after recreation: ", PeerConnection.current);
-        }
-      }
-    );
     return () => {
-      PeerConnection.current.peer.removeEventListener("track", getRemoteTracks);
-      PeerConnection.current.peer.removeEventListener(
+      PeerConnection.current[peerNumber.current].peer.removeEventListener(
+        "track",
+        getRemoteTracks
+      );
+      PeerConnection.current[peerNumber.current].peer.removeEventListener(
         "negotiationneeded",
         makeNegotiation
       );
     };
-  }, []);
+  }, [
+    PeerConnection.current[peerNumber.current].peer,
+    makeNegotiation,
+    getRemoteTracks,
+  ]);
 
   useEffect(() => {
     socketInstance.on("who:is:on:queue", (user2) => {
@@ -124,14 +138,18 @@ function Text() {
     });
 
     socketInstance.on("get:negotiation", async (offer) => {
-      const ans = await PeerConnection.current.connectRemoteOffer(offer);
+      const ans = await PeerConnection.current[
+        peerNumber.current
+      ].connectRemoteOffer(offer);
       socketInstance.emit("negotiation:done", {
         user2: userSockerId.current,
         ans,
       });
     });
     socketInstance.on("get:remote:offer", async (offer) => {
-      const answer = await PeerConnection.current.connectRemoteOffer(offer);
+      const answer = await PeerConnection.current[
+        peerNumber.current
+      ].connectRemoteOffer(offer);
       console.log("remote offer: ", offer);
       socketInstance.emit("send:answer", {
         ans: answer,
@@ -141,10 +159,15 @@ function Text() {
     socketInstance.on("activate:remote:stream", () => {
       console.log("webrtc connected with: user2");
     });
-    socketInstance.on("send:track:to:user2", () => setTracks());
+    socketInstance.on("send:track:to:user2", () => {
+      setTracks();
+      console.log("send the stream");
+    });
     socketInstance.on("get:negotiation:ans", async (ans) => {
       console.log("heres the asf: ", ans);
-      await PeerConnection.current.setRemoteDescription(ans);
+      await PeerConnection.current[peerNumber.current].setRemoteDescription(
+        ans
+      );
       socketInstance.emit("track:ready", userSockerId.current);
     });
 
@@ -156,7 +179,9 @@ function Text() {
       setOnlinePeoples(size);
     });
     socketInstance.on("get:remote:ans", async (remoteAnwser) => {
-      await PeerConnection.current.setRemoteDescription(remoteAnwser);
+      await PeerConnection.current[peerNumber.current].setRemoteDescription(
+        remoteAnwser
+      );
       console.log("remote ans: ", remoteAnwser);
       socketInstance.emit("send:active:stream", {
         user2: userSockerId.current,
@@ -164,6 +189,7 @@ function Text() {
       console.log("webrtc connected with: user2");
       // makeStreamForUser2();
       setTracks();
+      console.log("send the stream");
     });
     socketInstance.on("user:joined", async (user2) => {
       userSockerId.current = user2;
@@ -204,11 +230,16 @@ function Text() {
     socketInstance.emit("user:disconnect", user2);
     setDefault(false);
   };
-  function setDefault(fromUser2) {
-    if (bothVideoAndText.current && !fromUser2) {
-      PeerConnection.current.disconnect();
-      PeerConnection.current.peer.restartIce();
-      console.log("peer connection state => ", PeerConnection.current);
+  function setDefault() {
+    if (bothVideoAndText.current) {
+      removeTracks();
+      PeerConnection.current[peerNumber.current].peer.close();
+      peerNumber.current++;
+      PeerConnection.current.push(new Peer());
+      console.log(
+        "peer connection state => ",
+        PeerConnection.current[peerNumber.current]
+      );
     }
     userSockerId.current = null;
     setUser2Stream(null);
@@ -242,7 +273,7 @@ function Text() {
   }
   useEffect(() => {
     makeStream();
-    console.log("starting peer: ", PeerConnection.current);
+    console.log("starting peer: ", PeerConnection.current[peerNumber.current]);
     socketInstance.emit("updateNumber");
   }, []);
   return (
@@ -275,7 +306,7 @@ function Text() {
           send
         </button>
       </div>
-
+      <button onClick={setTracks}>Send !</button>
       {bothVideoAndText.current && (
         <div>
           <ReactPlayer url={myStream} playing />

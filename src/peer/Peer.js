@@ -12,6 +12,7 @@ class Peer {
             "stun:stun.l.google.com:19302",
             "stun:global.stun.twilio.com:3478",
           ],
+          iceCandidatePoolSize: 2,
         },
       ],
     });
@@ -21,12 +22,6 @@ class Peer {
       const offer = await this.peer.createOffer();
       await this.peer.setLocalDescription(new RTCSessionDescription(offer));
       return offer;
-    }
-  }
-  disconnect() {
-    if (this.peer) {
-      this.peer.close();
-      this.makePeer();
     }
   }
   async connectRemoteOffer(offer) {

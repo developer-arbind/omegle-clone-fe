@@ -9,14 +9,10 @@ function Text() {
   const isWaiting = useRef(false);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const callsCount = useRef(0);
   const isStreamingOn = useSelector((state) => state.updateIsStreaming);
   const bothVideoAndText = useRef(isStreamingOn.yes);
-
-  const interests = useRef(useSelector((state) => state.updateInterest));
-  const PeerConnection = useRef(new Peer());
-  // const remotePeerConnection = useRef(new Peer());
-  console.log(isStreamingOn, bothVideoAndText.current);
+  const PeerConnection = useRef([new Peer()]);
+  const peerNumber = useRef(0);
   const [myStream, setMyStream] = useState();
   const streamRef = useRef();
   const [user2Stream, setUser2Stream] = useState();
@@ -26,49 +22,8 @@ function Text() {
       random: "",
     },
   ]);
-  const setTracks = () => {
-    console.log("by: ", streamRef.current);
-    const senders = PeerConnection.current.peer.getSenders();
-    for (let track of streamRef.current.getTracks()) {
-      let sender;
-      try {
-        sender = senders.find((s) => s.track.kind === track.kind);
-      } catch (err) {}
-      if (sender) {
-        sender.replaceTrack(track);
-      } else {
-        PeerConnection.current.peer.addTrack(track, streamRef.current);
-      }
-      console.log("Peer: ", PeerConnection.current.peer);
-    }
-  };
-  const removeTracks = () => {
-    const senders = PeerConnection.current.peer.getSenders();
-    senders.forEach((sender) => {
-      PeerConnection.current.peer.removeTrack(sender);
-    });
-    streamRef.current
-      .getTracks()
-      .forEach((track) => streamRef.current.removeTrack(track));
-    makeStream();
-  };
-  async function makeStream() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: true,
-    });
-    console.log(stream);
-    streamRef.current = stream;
-    setMyStream(stream);
-    // setTracks();
-  }
-  const getOffer = async () => {
-    const offer = await PeerConnection.current.getOffer();
-    console.log(offer);
-    socketInstance.emit("send:offer", { user2: userSockerId.current, offer });
-  };
+
   const userSockerId = useRef(null);
-  const socketId = useSelector((state) => state.updateSocketId);
   const history = useNavigate();
   const { isAgreedTerms, isAgreedAgeVerification } = useSelector(
     (state) => state.updateInitial
@@ -81,161 +36,209 @@ function Text() {
   const startNewServer = async () => {
     isWaiting.current = true;
     socketInstance.emit("wait:on:queue");
-    if (!PeerConnection.current.peer) {
-      PeerConnection.current = new Peer();
-    }
-    console.log("PeerConnection: ", PeerConnection.current);
     setTexts([]);
   };
   const getRemoteTracks = useCallback((event) => {
     const user2StreamConnection = event.streams;
-    console.log("second person track: ", user2StreamConnection[0]);
     setUser2Stream(user2StreamConnection[0]);
   }, []);
-
+  const setTracks = useCallback(() => {
+    const senders =
+      PeerConnection.current[peerNumber.current].peer.getSenders();
+    for (let track of streamRef.current.getTracks()) {
+      let sender;
+      try {
+        sender = senders.find((s) => s.track.kind === track.kind);
+      } catch (err) {}
+      if (sender) {
+        sender.replaceTrack(track);
+      } else {
+        PeerConnection.current[peerNumber.current].peer.addTrack(
+          track,
+          streamRef.current
+        );
+      }
+    }
+  }, []);
+  const removeTracks = useCallback(() => {
+    const senders =
+      PeerConnection.current[peerNumber.current].peer.getSenders();
+    senders.forEach((sender) => {
+      PeerConnection.current[peerNumber.current].peer.removeTrack(sender);
+    });
+    streamRef.current.getTracks().forEach((track) => track.stop());
+    setMyStream(null);
+    makeStream();
+  }, []);
+  async function makeStream() {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: true,
+    });
+    streamRef.current = stream;
+    setMyStream(stream);
+  }
+  const getOffer = useCallback(async () => {
+    const offer = await PeerConnection.current[peerNumber.current].getOffer();
+    socketInstance.emit("send:offer", { user2: userSockerId.current, offer });
+  }, []);
   const makeNegotiation = useCallback(async () => {
-    console.log("./");
-    const offer = await PeerConnection.current.getOffer();
-    console.log("negotiation needed offer: ", offer);
+    const offer = await PeerConnection.current[peerNumber.current].getOffer();
     socketInstance.emit("send:negotiation", {
       user2: userSockerId.current,
       offer,
     });
   }, []);
   useEffect(() => {
-    PeerConnection.current.peer.addEventListener("track", getRemoteTracks);
-    PeerConnection.current.peer.addEventListener(
+    PeerConnection.current[peerNumber.current].peer.addEventListener(
+      "track",
+      getRemoteTracks
+    );
+    PeerConnection.current[peerNumber.current].peer.addEventListener(
       "negotiationneeded",
       makeNegotiation
     );
-    PeerConnection.current.peer.addEventListener(
-      "iceconnectionstatechange",
-      () => {
-        if (PeerConnection.current.peer.iceConnectionState === "disconnected") {
-          removeTracks();
-          PeerConnection.current.disconnect();
-          PeerConnection.current.peer.restartIce();
-
-          console.log("after recreation: ", PeerConnection.current);
-        }
-      }
-    );
     return () => {
-      PeerConnection.current.peer.removeEventListener("track", getRemoteTracks);
-      PeerConnection.current.peer.removeEventListener(
+      PeerConnection.current[peerNumber.current].peer.removeEventListener(
+        "track",
+        getRemoteTracks
+      );
+      PeerConnection.current[peerNumber.current].peer.removeEventListener(
         "negotiationneeded",
         makeNegotiation
       );
     };
+  }, [
+    PeerConnection.current[peerNumber.current].peer,
+    makeNegotiation,
+    getRemoteTracks,
+  ]);
+
+  const checkingUserHandler = useCallback((user2) => {
+    if (isWaiting.current) {
+      socketInstance.emit("is:already:talked", user2);
+    }
+  }, []);
+  const getNegotiationHandler = useCallback(async (offer) => {
+    const ans = await PeerConnection.current[
+      peerNumber.current
+    ].connectRemoteOffer(offer);
+    socketInstance.emit("negotiation:done", {
+      user2: userSockerId.current,
+      ans,
+    });
+  }, []);
+  const getRemoteOfferHandler = useCallback(async (offer) => {
+    const answer = await PeerConnection.current[
+      peerNumber.current
+    ].connectRemoteOffer(offer);
+
+    socketInstance.emit("send:answer", {
+      ans: answer,
+      user2: userSockerId.current,
+    });
   }, []);
 
+  const sendTracksToUser2Handler = useCallback(() => {
+    setTracks();
+  }, []);
+  const getNegotiationAnwser = useCallback(async (ans) => {
+    await PeerConnection.current[peerNumber.current].setRemoteDescription(ans);
+    socketInstance.emit("track:ready", userSockerId.current);
+  }, []);
+  const userDisconnectFromRoom = useCallback((size) => {
+    setOnlinePeoples(size);
+  }, []);
+  const currentOnlinePeoplesHandler = useCallback((size) => {
+    setOnlinePeoples(size);
+  }, []);
+  const getRemoteAnwser = useCallback(async (remoteAnwser) => {
+    await PeerConnection.current[peerNumber.current].setRemoteDescription(
+      remoteAnwser
+    );
+
+    socketInstance.emit("send:active:stream", {
+      user2: userSockerId.current,
+    });
+
+    setTracks();
+  }, []);
+  const userJoined = useCallback(async (user2) => {
+    userSockerId.current = user2;
+    isWaiting.current = false;
+    setIsConnected(true);
+  }, []);
+  const youJoinedHandler = useCallback(async (user2) => {
+    userSockerId.current = user2;
+    isWaiting.current = false;
+
+    if (bothVideoAndText.current) {
+      getOffer();
+    }
+    setIsConnected(true);
+  }, []);
+  const userTypingHandler = useCallback(() => {
+    setIsTyping(true);
+  }, []);
+  const getText = useCallback((text) => {
+    setTexts((prev) => [...prev, { random: text }]);
+  }, []);
+  const userDisconnectHandler = useCallback(() => {
+    setDefault(true);
+    alert("stranger disconnected");
+  }, []);
+  const userTypedTypingHandler = useCallback(() => {
+    setIsTyping(false);
+  }, []);
   useEffect(() => {
-    socketInstance.on("who:is:on:queue", (user2) => {
-      console.log("cheking for user: " + user2);
-      if (isWaiting.current) {
-        socketInstance.emit("is:already:talked", user2);
-      }
-    });
+    socketInstance.on("who:is:on:queue", checkingUserHandler);
+    socketInstance.on("get:negotiation", getNegotiationHandler);
+    socketInstance.on("get:remote:offer", getRemoteOfferHandler);
+    socketInstance.on("send:track:to:user2", sendTracksToUser2Handler);
+    socketInstance.on("get:negotiation:ans", getNegotiationAnwser);
+    socketInstance.on("user:disconnect:from:server", userDisconnectFromRoom);
+    socketInstance.on("online:peoples", currentOnlinePeoplesHandler);
+    socketInstance.on("get:remote:ans", getRemoteAnwser);
+    socketInstance.on("user:joined", userJoined);
+    socketInstance.on("you:joined", youJoinedHandler);
+    socketInstance.on("user:tpying", userTypingHandler);
+    socketInstance.on("get:text", getText);
+    socketInstance.on("user:disconnect", userDisconnectHandler);
+    socketInstance.on("stoped:typing", userTypedTypingHandler);
 
-    socketInstance.on("get:negotiation", async (offer) => {
-      const ans = await PeerConnection.current.connectRemoteOffer(offer);
-      socketInstance.emit("negotiation:done", {
-        user2: userSockerId.current,
-        ans,
-      });
-    });
-    socketInstance.on("get:remote:offer", async (offer) => {
-      const answer = await PeerConnection.current.connectRemoteOffer(offer);
-      console.log("remote offer: ", offer);
-      socketInstance.emit("send:answer", {
-        ans: answer,
-        user2: userSockerId.current,
-      });
-    });
-    socketInstance.on("activate:remote:stream", () => {
-      console.log("webrtc connected with: user2");
-    });
-    socketInstance.on("send:track:to:user2", () => {
-      setTracks();
-      console.log("send the stream");
-    });
-    socketInstance.on("get:negotiation:ans", async (ans) => {
-      console.log("heres the asf: ", ans);
-      await PeerConnection.current.setRemoteDescription(ans);
-      socketInstance.emit("track:ready", userSockerId.current);
-    });
-
-    socketInstance.on("user:disconnect:from:server", (size) => {
-      setOnlinePeoples(size);
-    });
-
-    socketInstance.on("online:peoples", (size) => {
-      setOnlinePeoples(size);
-    });
-    socketInstance.on("get:remote:ans", async (remoteAnwser) => {
-      await PeerConnection.current.setRemoteDescription(remoteAnwser);
-      console.log("remote ans: ", remoteAnwser);
-      socketInstance.emit("send:active:stream", {
-        user2: userSockerId.current,
-      });
-      console.log("webrtc connected with: user2");
-      // makeStreamForUser2();
-      setTracks();
-      console.log("send the stream");
-    });
-    socketInstance.on("user:joined", async (user2) => {
-      userSockerId.current = user2;
-      console.log("you joined with: + " + user2);
-      isWaiting.current = false;
-      setIsConnected(true);
-    });
-    socketInstance.on("you:joined", async (user2) => {
-      userSockerId.current = user2;
-      isWaiting.current = false;
-      console.log("you joined with: " + user2);
-
-      if (bothVideoAndText.current) {
-        getOffer();
-      }
-      setIsConnected(true);
-    });
-    socketInstance.on("user:tpying", () => {
-      console.log("user typing");
-      setIsTyping(true);
-    });
-    socketInstance.on("get:text", (text) => {
-      console.log(text);
-      setTexts((prev) => [...prev, { random: text }]);
-    });
-    socketInstance.on("console:text", () => {
-      console.log(arrayOfTexts.current);
-    });
-    socketInstance.on("user:disconnect", () => {
-      setDefault(true);
-      alert("stranger disconnected");
-    });
-    socketInstance.on("stoped:typing", () => {
-      setIsTyping(false);
-    });
+    return () => {
+      socketInstance.off("who:is:on:queue", checkingUserHandler);
+      socketInstance.off("get:negotiation", getNegotiationHandler);
+      socketInstance.off("get:remote:offer", getRemoteOfferHandler);
+      socketInstance.off("send:track:to:user2", sendTracksToUser2Handler);
+      socketInstance.off("get:negotiation:ans", getNegotiationAnwser);
+      socketInstance.off("user:disconnect:from:server", userDisconnectFromRoom);
+      socketInstance.off("online:peoples", currentOnlinePeoplesHandler);
+      socketInstance.off("get:remote:ans", getRemoteAnwser);
+      socketInstance.off("user:joined", userJoined);
+      socketInstance.off("you:joined", youJoinedHandler);
+      socketInstance.off("user:tpying", userTypingHandler);
+      socketInstance.off("get:text", getText);
+      socketInstance.off("user:disconnect", userDisconnectHandler);
+      socketInstance.off("stoped:typing", userTypedTypingHandler);
+    };
   }, []);
   const disconnectUser = (user2) => {
     socketInstance.emit("user:disconnect", user2);
     setDefault(false);
   };
-  function setDefault(fromUser2) {
-    if (bothVideoAndText.current && !fromUser2) {
+  function setDefault() {
+    if (bothVideoAndText.current) {
       removeTracks();
-      PeerConnection.current.disconnect();
-      PeerConnection.current.peer.restartIce();
-      console.log("peer connection state => ", PeerConnection.current);
+      PeerConnection.current[peerNumber.current].peer.close();
+      peerNumber.current++;
+      PeerConnection.current.push(new Peer());
     }
     userSockerId.current = null;
     setUser2Stream(null);
     setIsConnected(false);
   }
   const sendTxt = (text) => {
-    console.log("userSockerId: ", userSockerId.current);
-    console.log("socketId: ", socketId);
     socketInstance.emit("send:text", { text, roomId: userSockerId.current });
     setTexts((prev) => [...prev, { random: text }]);
   };
@@ -261,7 +264,6 @@ function Text() {
   }
   useEffect(() => {
     makeStream();
-    console.log("starting peer: ", PeerConnection.current);
     socketInstance.emit("updateNumber");
   }, []);
   return (
@@ -294,7 +296,7 @@ function Text() {
           send
         </button>
       </div>
-
+      <button onClick={setTracks}>Send !</button>
       {bothVideoAndText.current && (
         <div>
           <ReactPlayer url={myStream} playing />
