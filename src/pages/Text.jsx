@@ -281,7 +281,7 @@ setLoader(0);
     }, 800);
   }
   useEffect(() => {
-    makeStream();
+    bothVideoAndText.current ? makeStream(): console.log('text version');
     socketInstance.emit("updateNumber");
   }, []);
   return (
