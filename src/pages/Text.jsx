@@ -11,6 +11,8 @@ function Text() {
   const [isTyping, setIsTyping] = useState(false);
   const isStreamingOn = useSelector((state) => state.updateIsStreaming);
   const bothVideoAndText = useRef(isStreamingOn.yes);
+  const interests = useSelector(state => state.updateInterest);
+  const [loader, setLoader] = useState(0);
   const PeerConnection = useRef([new Peer()]);
   const peerNumber = useRef(0);
   const [myStream, setMyStream] = useState();
@@ -35,8 +37,9 @@ function Text() {
   }, []);
   const startNewServer = async () => {
     isWaiting.current = true;
-    socketInstance.emit("wait:on:queue");
+    socketInstance.emit("wait:on:queue", interests.context ? interests.context : null);
     setTexts([]);
+setLoader(true);
   };
   const getRemoteTracks = useCallback((event) => {
     const user2StreamConnection = event.streams;
@@ -71,12 +74,16 @@ function Text() {
     makeStream();
   }, []);
   async function makeStream() {
+try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: true,
     });
     streamRef.current = stream;
     setMyStream(stream);
+}catch(err){
+    alert('install camera first, before attemping to use it XD fr')
+  }
   }
   const getOffer = useCallback(async () => {
     const offer = await PeerConnection.current[peerNumber.current].getOffer();
@@ -114,9 +121,17 @@ function Text() {
     getRemoteTracks,
   ]);
 
-  const checkingUserHandler = useCallback((user2) => {
+  const checkingUserHandler = useCallback((user2, interest) => {
     if (isWaiting.current) {
+if(interest && interest === interests.context){
+        socketInstance.emit("is:already:talked", user2);
+        
+      }else{
+        if(!interest && !interests.context){
       socketInstance.emit("is:already:talked", user2);
+
+        }
+      }
     }
   }, []);
   const getNegotiationHandler = useCallback(async (offer) => {
@@ -167,6 +182,7 @@ function Text() {
     userSockerId.current = user2;
     isWaiting.current = false;
     setIsConnected(true);
+setLoader(3);
   }, []);
   const youJoinedHandler = useCallback(async (user2) => {
     userSockerId.current = user2;
@@ -176,6 +192,7 @@ function Text() {
       getOffer();
     }
     setIsConnected(true);
+setLoader(3);
   }, []);
   const userTypingHandler = useCallback(() => {
     setIsTyping(true);
@@ -237,6 +254,7 @@ function Text() {
     userSockerId.current = null;
     setUser2Stream(null);
     setIsConnected(false);
+setLoader(0);
   }
   const sendTxt = (text) => {
     socketInstance.emit("send:text", { text, roomId: userSockerId.current });
@@ -269,6 +287,7 @@ function Text() {
   return (
     <div>
       <h1>number of peoples online: {onlinePeoples}</h1>
+<h3 id="loder: ">{loader == 1 ? "Finding Stranger...." : (loader === 0 ? "click the start connect button" : "you are now talking to stranger, say Hi.")}</h3>
       <div className="messages">
         {texts.map((e, i) => {
           return (
@@ -280,7 +299,7 @@ function Text() {
       </div>
       <p id="typing">{isTyping ? "stranger typing..." : ""}</p>
       <div className="text">
-        <button onClick={startNewServer}>New Server</button>
+        <button onClick={startNewServer}>Connect to random user.</button>
         <button onClick={() => disconnectUser(userSockerId.current)}>
           {isConnected ? "Disconnect" : "Not connected yet."}
         </button>
