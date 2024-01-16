@@ -51,7 +51,7 @@ function App() {
   }
   return (
     <div>
-      <h1>This is OMEGLE CLONE WITH VIDEO AND TEXT CHAT SUPPORT. working accress all over the world. thank you!</h1>
+      <h1>This is an OMEGLE CLONE WITH VIDEO AND TEXT CHAT SUPPORT. working all over the world. thank you!</h1>
       <button
         id="text"
         onClick={() => {
