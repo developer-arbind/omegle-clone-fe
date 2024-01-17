@@ -259,6 +259,7 @@ setLoader(0);
   const sendTxt = (text) => {
     socketInstance.emit("send:text", { text, roomId: userSockerId.current });
     setTexts((prev) => [...prev, { random: text }]);
+    setInput("");
   };
 
   function setInputWithDebounce(e) {
