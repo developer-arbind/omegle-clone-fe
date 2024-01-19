@@ -123,15 +123,24 @@ try {
 
   const checkingUserHandler = useCallback((user2, interest) => {
     if (isWaiting.current) {
+      if(!Array.isArray(interest)){
 if(interest && interest === interests.context){
         socketInstance.emit("is:already:talked", user2);
-        
       }else{
         if(!interest && !interests.context){
       socketInstance.emit("is:already:talked", user2);
-
         }
       }
+    }else{
+      const interests = interest.map(words => words.trim().toLowerCase());
+      for(let x = 0; x < interest.length; x++){
+        if(interests.includes(interest[x])){
+          socketInstance.emit("is:already:talked", user2);
+          break;
+        }
+      }
+      //continue
+    }
     }
   }, []);
   const getNegotiationHandler = useCallback(async (offer) => {
